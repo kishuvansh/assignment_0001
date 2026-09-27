@@ -38,6 +38,17 @@ class Composer:
                 "cta": cta
             }
         except Exception as e:
+            # Fallback 1: Attempt to extract message/body with regex if JSON is cut off
+            import re
+            match = re.search(r'"(?:body|message)"\s*:\s*"([^"\\]*(?:\\.[^"\\]*)*)', clean_text)
+            if match and len(match.group(1)) > 15:
+                extracted = match.group(1).replace('\\"', '"').replace('\\n', '\n').strip()
+                return {
+                    "body": extracted,
+                    "rationale": "Extracted contextually composed message.",
+                    "cta": "open_ended"
+                }
+                
             print(f"Failed to parse LLM response: {e}. Raw: {response_text}")
             return {
                 "body": "Hi there! I noticed some updates to your profile.",
