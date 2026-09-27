@@ -1,5 +1,6 @@
 import os
 import json
+import asyncio
 import httpx
 from dotenv import load_dotenv
 
@@ -24,27 +25,36 @@ class LLMClient:
             messages.append({"role": "system", "content": system})
         messages.append({"role": "user", "content": prompt})
 
-        payload = {
-            "model": self.model,
-            "messages": messages,
-            "temperature": 0.2,
-            "max_tokens": 1000
-        }
+        models_to_try = [self.model, "google/gemini-2.0-flash-exp:free", "meta-llama/llama-3.3-70b-instruct:free"]
         
-        if json_format:
-            payload["response_format"] = {"type": "json_object"}
-
         async with httpx.AsyncClient() as client:
-            try:
-                response = await client.post(
-                    self.base_url,
-                    headers=headers,
-                    json=payload,
-                    timeout=20.0
-                )
-                response.raise_for_status()
-                data = response.json()
-                return data["choices"][0]["message"]["content"]
-            except Exception as e:
-                print(f"LLM Error: {e}")
-                return ""
+            for model_name in models_to_try:
+                for attempt in range(2):
+                    payload = {
+                        "model": model_name,
+                        "messages": messages,
+                        "temperature": 0.2,
+                        "max_tokens": 1000
+                    }
+                    
+                    try:
+                        response = await client.post(
+                            self.base_url,
+                            headers=headers,
+                            json=payload,
+                            timeout=45.0
+                        )
+                        if response.status_code == 200:
+                            data = response.json()
+                            choices = data.get("choices", [])
+                            if choices and choices[0].get("message", {}).get("content"):
+                                content = choices[0]["message"]["content"].strip()
+                                if content and content != "None" and "User Safety: safe" not in content:
+                                    return content
+                        elif response.status_code == 429:
+                            await asyncio.sleep(2)
+                    except Exception as e:
+                        pass
+                    await asyncio.sleep(1)
+                    
+        return ""
